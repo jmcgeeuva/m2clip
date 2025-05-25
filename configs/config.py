@@ -1,8 +1,8 @@
 # Path to the downloaded CLIP official weights.
 # See: https://github.com/openai/CLIP/blob/a9b1bf5920416aaeaec965c25dd9e8f98c864f16/clip/clip.py#L30
-CLIP_VIT_B16_PATH = '/slurm-files/wmm/models/ViT-B-16.pt'
-CLIP_VIT_B32_PATH = '/slurm-files/wmm/models/ViT-B-32.pt'
-CLIP_VIT_L14_PATH = '/slurm-files/wmm/models/ViT-L-14.pt'
+CLIP_VIT_B16_PATH = '/home/tkg5kq/.cache/clip/ViT-B-16.pt'
+CLIP_VIT_B32_PATH = '/home/tkg5kq/.cache/clip/ViT-B-32.pt'
+CLIP_VIT_L14_PATH = '/home/tkg5kq/.cache/clip/ViT-L-14.pt'
 
 # Whether cuDNN should be temporarily disable for 3D depthwise convolution.
 # For some PyTorch builds the built-in 3D depthwise convolution may be much
@@ -34,5 +34,12 @@ DATASETS = {
         TRAIN_LIST='lists/k4001/k400_tr_128v.txt',
         VAL_LIST='lists/k400_val.txt',
         NUM_CLASSES=400,
+    ),
+    'education': dict(
+        TRAIN_ROOT='',
+        VAL_ROOT='',
+        TRAIN_LIST='lists/edu/edu_train.txt',
+        VAL_LIST='lists/edu_val.txt',
+        NUM_CLASSES=6,
     ),
 }

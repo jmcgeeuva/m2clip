@@ -58,7 +58,7 @@ class VideoDataset(torch.utils.data.Dataset):
             assert False, 'resize type %s is not supported.' % resize_type
 
         self.mean, self.std = mean, std
-        self.num_frames, self.sampling_rate = num_frames, sampling_rate
+        self.num_frames, self.sampling_rate = num_frames, 1
 
         if random_sample:
             assert num_spatial_views == 1 and num_temporal_views == 1
@@ -72,6 +72,7 @@ class VideoDataset(torch.utils.data.Dataset):
             self.num_spatial_views = num_spatial_views
 
         with open(list_path) as f:
+            print(list_path)
             self.data_list = f.read().splitlines()
 
 
@@ -97,19 +98,30 @@ class VideoDataset(torch.utils.data.Dataset):
             label = None
         path = os.path.join(self.data_root, path)
 
-        raw_data = load_binary(path)
-        container = av.open(io.BytesIO(raw_data))
-        container.streams.video[0].thread_count = 1
-        frames = {}
-        for frame in container.decode(video=0):
-            frames[frame.pts] = frame
-        container.close()
-        frames = [frames[k] for k in sorted(frames.keys())]
+        # print(f'DEBUGJM: {path}')
+        container_files = [file for file in os.listdir(path) if 'jpg' in file]
+        frames_len = len(container_files)
+        # raw_data = load_binary(path)
+        # container = av.open(path)
+        # container = av.open(io.BytesIO(raw_data))
+        # container.streams.video[0].thread_count = 1
+        # for frame in container.decode(video=0):
+        #     frames[frame.pts] = frame
+        # container.close()
+        # frames = [frames[k] for k in sorted(frames.keys())]
+
+        frames = []
+        from PIL import Image
+        def _load_image(directory, idx):
+            return Image.open(os.path.join(directory, f"{idx:04d}.jpg")).convert('RGB')
 
         if self.random_sample:
-            frame_idx = self._random_sample_frame_idx(len(frames))
-            frames = [frames[x].to_rgb().to_ndarray() for x in frame_idx]
+            # print(f'DEBUGJM: {path} {len(frames)}')
+            frame_idx = self._random_sample_frame_idx(frames_len)
+            frames = [np.array(_load_image(path, x+1)) for x in frame_idx]
             frames = torch.as_tensor(np.stack(frames)).float() / 255.
+            # frames = [frames[x].to_rgb().to_ndarray() for x in frame_idx]
+            # frames = torch.as_tensor(np.stack(frames)).float() / 255.
 
             if self.auto_augment is not None:
                 aug_transform = create_random_augment(
@@ -149,9 +161,13 @@ class VideoDataset(torch.utils.data.Dataset):
                 frames = frames.flip(dims=(-1,))
             
         else:
-            frames = [x.to_rgb().to_ndarray() for x in frames]
+            frames = [np.array(_load_image(path, x+1)) for x in range(frames_len)]
             frames = torch.as_tensor(np.stack(frames))
             frames = frames.float() / 255.
+
+            # frames = [x.to_rgb().to_ndarray() for x in frames]
+            # frames = torch.as_tensor(np.stack(frames))
+            # frames = frames.float() / 255.
 
             frames = (frames - self.mean) / self.std
             frames = frames.permute(3, 0, 1, 2) # C, T, H, W
@@ -248,7 +264,7 @@ class VideoDataset(torch.utils.data.Dataset):
 
     def _random_sample_frame_idx(self, len):
         frame_indices = []
-
+        # print(f'DEBUGJM: {len}')
         if self.sampling_rate <= 0: # tsn sample
             seg_size = (len - 1) / self.num_frames
             for i in range(self.num_frames):

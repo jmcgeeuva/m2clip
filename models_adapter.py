@@ -683,6 +683,7 @@ class CLIP(nn.Module):
         text_feats = self.ln_final(text_feats)
         mlm_logits = self.mlm_adapter(text_feats)
         
+        # print(mlm_logits, self.mlm_head_len)
         mlm_loss = F.cross_entropy(
             mlm_logits.view(-1, self.mlm_head_len),
             mlm_labels.view(-1),

@@ -38,7 +38,7 @@ def main():
       help='number of warmup epochs.')
   parser.add_argument('--eval_only', action='store_true',
       help='only run evaluation.')
-  parser.add_argument("--local_rank", type=int, default=-1)
+  parser.add_argument("--local-rank", type=int, default=-1)
   # This needs to be explicitly passed in
   # parser.add_argument("--local_world_size", type=int, default=1)
   parser.add_argument('--save_dir', type=str,
@@ -229,7 +229,7 @@ def main():
             with torch.no_grad():
                 text_inputs = classes.cuda()
                 text_features,_ = model.module.encode_text(text_inputs)
-                text_features /= text_features.norm(dim=-1, keepdim=True)
+                text_features = text_features / (text_features.norm(dim=-1, keepdim=True))
                 # pdb.set_trace()
                 # nm = text_features.cpu().numpy()
                 # corr2=np.corrcoef(nm)
@@ -251,7 +251,7 @@ def main():
         acc1_fc = (scores.topk(1, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
         acc5_fc = (scores.topk(5, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
         
-        image_features /= image_features.norm(dim=-1, keepdim=True)    
+        image_features = image_features / (image_features.norm(dim=-1, keepdim=True))
         
         similarity = (100.0 * image_features @ text_features.T)
         similarity = similarity.softmax(dim=-1)
@@ -334,12 +334,13 @@ def main():
         total_loss = (loss_imgs + loss_texts)/2
         # pdb.set_trace()
         text_features,_ = model.module.encode_text(text_inputs)
-        text_features /= text_features.norm(dim=-1, keepdim=True)
+        text_features = text_features/(text_features.norm(dim=-1, keepdim=True))
         similarity = (100.0 * image_embedding @ text_features.T)
         similarity = similarity.softmax(dim=-1)
         acc1 = (similarity.topk(1, dim=-1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
         acc5 = (similarity.topk(5, dim=-1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
         loss = F.cross_entropy(similarity, labels)
+        # print(f'Loss: {loss.item()}, FC: {loss_fc.item()}, MLM: {mlm_loss.item()}')
         total_loss = (total_loss + loss)/2 + loss_fc + mlm_loss / 10
 
       loss_scaler.scale(total_loss).backward()

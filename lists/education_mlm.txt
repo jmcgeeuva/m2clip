@@ -1,0 +1,9 @@
+a 0
+book 1
+sitting 2
+standing 3
+teacher 4
+technology 5
+using 6
+worksheet 7
+writing 8
