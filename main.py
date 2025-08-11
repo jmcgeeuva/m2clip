@@ -3,6 +3,39 @@ import math
 import json
 import os
 
+# Code for "ActionCLIP: ActionCLIP: A New Paradigm for Action Recognition"
+# arXiv:
+# Mengmeng Wang, Jiazheng Xing, Yong Liu
+
+import os
+import sys
+sys.path.insert(0, "./../explainable_bounding_box/ml-no-token-left-behind/external/tamingtransformers/")
+sys.path.append("./../explainable_bounding_box/ml-no-token-left-behind/external/TransformerMMExplainability/")
+
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+import wandb
+import argparse
+import shutil
+from pathlib import Path
+import yaml
+from dotmap import DotMap
+import pprint
+import numpy
+import torch
+
+from sklearn.metrics import confusion_matrix
+from sklearn.utils.multiclass import unique_labels
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.metrics import multilabel_confusion_matrix, accuracy_score
+from torchvision import transforms
+# from TSSTANET.tsstanet import tanet, sanet, stanet, stanet_af
+import os
+import random
+import math
+
 import torch
 import torch.nn.functional as F
 import torch.distributed as dist
@@ -14,9 +47,89 @@ from video_dataset import VideoDataset
 from configs import DATASETS
 import numpy as np
 import shutil
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.metrics import multilabel_confusion_matrix, accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.utils.multiclass import unique_labels
 class DataLoaderX(DataLoader):
     def __iter__(self):
       return BackgroundGenerator(super().__iter__())
+
+def plot_confusion_matrix(y_true, y_pred, classes, name,
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if not title:
+        if normalize:
+            title = 'Normalized confusion matrix'
+        else:
+            title = 'Confusion matrix, without normalization'
+
+    # Compute confusion matrix
+
+    new_pred = []
+    for i, (pred, gt) in enumerate(zip(y_pred, y_true)):
+        if type(pred) == type(list()):
+            if gt in pred:
+                new_pred.append(gt)
+            else:
+                # if not just add the top-1 choice
+                new_pred.append(pred[0])
+        else:
+            new_pred.append(pred)
+
+    y_pred = new_pred
+    cm = confusion_matrix(y_true, y_pred)
+
+    # Only use the labels that appear in the data
+    classes = classes[unique_labels(y_true, y_pred)]
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    # print(cm)
+
+    with open(f'{name}_confusion.txt', 'w') as f:
+        for el in cm:
+            for np_entry in el:
+                f.write(f'{np_entry},')
+            f.write('\n')
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
+
+    fig.tight_layout()
+    plt.savefig(f'{name}.png')
+    plt.clf()
     
 def main():
   parser = argparse.ArgumentParser()
@@ -234,6 +347,10 @@ def main():
                 # nm = text_features.cpu().numpy()
                 # corr2=np.corrcoef(nm)
                 # print(corr2)
+    labeled_ids_fc = []
+    correct_ids_fc = []
+    labeled_ids = []
+    correct_ids = []
                 
     for data, labels in metric_logger.log_every(dataloader_val, 10, header):
       # pdb.set_trace()
@@ -248,21 +365,33 @@ def main():
             image_features,_,logits = model.module.encode_image(data)
         scores = logits.softmax(dim=-1)
         scores = scores.view(B, V, -1).mean(dim=1)
+        values_1_fc, indices_1_fc = scores.topk(1, dim=-1)
+        values_k_fc, indices_k_fc = scores.topk(2, dim=-1)
         acc1_fc = (scores.topk(1, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
-        acc5_fc = (scores.topk(5, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
+        acc5_fc = (scores.topk(2, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
+        labeled_ids_fc.append(indices_1_fc)
+        correct_ids_fc.extend(labels.tolist())
         
         image_features = image_features / (image_features.norm(dim=-1, keepdim=True))
         
         similarity = (100.0 * image_features @ text_features.T)
         similarity = similarity.softmax(dim=-1)
         similarity = similarity.view(B, V, -1).mean(dim=1)
+        values_1, indices_1 = similarity.topk(1, dim=-1)
+        values_k, indices_k = similarity.topk(2, dim=-1)
         acc1 = (similarity.topk(1, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
-        acc5 = (similarity.topk(5, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
+        acc5 = (similarity.topk(2, dim=1)[1] == labels.view(-1, 1)).sum(dim=-1).float().mean().item() * 100
+        labeled_ids.append(indices_1)
+        correct_ids.extend(labels.tolist())
       metric_logger.meters['acc1'].update(acc1, n=similarity.size(0))
       metric_logger.meters['acc5'].update(acc5, n=similarity.size(0))
       metric_logger.meters['acc1_fc'].update(acc1_fc, n=similarity.size(0))
       metric_logger.meters['acc5_fc'].update(acc5_fc, n=similarity.size(0))
     metric_logger.synchronize_between_processes()
+    labeled_ids = torch.cat(labeled_ids).tolist()
+    labeled_ids_fc = torch.cat(labeled_ids_fc).tolist()
+    plot_confusion_matrix(correct_ids, labeled_ids, np.array(["Using a Book", "Teacher Sitting", "Teacher Standing", "Teacher Writing", "Using Technology", "Using a Worksheet"]), name="top1")
+    plot_confusion_matrix(correct_ids_fc, labeled_ids_fc, np.array(["Using a Book", "Teacher Sitting", "Teacher Standing", "Teacher Writing", "Using Technology", "Using a Worksheet"]), name="fc_top1")
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f}////AccFC@1 {top1_fc.global_avg:.3f} AccFC@5 {top5_fc.global_avg:.3f}'
         .format(top1=metric_logger.acc1, top5=metric_logger.acc5,top1_fc=metric_logger.acc1_fc, top5_fc=metric_logger.acc5_fc))
     if log_stats is not None:
